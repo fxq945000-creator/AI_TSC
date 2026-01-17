@@ -1,2 +1,4 @@
 # Python项目依赖
 # 使用 pip install -r requirements.txt 安装依赖
+requests
+python-dotenv

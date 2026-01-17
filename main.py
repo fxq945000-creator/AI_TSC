@@ -6,12 +6,22 @@ AI_TSC项目主程序入口
 """
 
 import sys
+import tkinter as tk
+
+from src.script_analyzer import ScriptAnalyzerGUI
 
 
 def main():
     """主函数"""
-    print("欢迎使用AI_TSC Python项目！")
+    print("欢迎使用短视频脚本分析工具！")
     print(f"Python版本: {sys.version}")
+    
+    # 创建主窗口
+    root = tk.Tk()
+    app = ScriptAnalyzerGUI(root)
+    
+    # 启动主循环
+    root.mainloop()
     return 0
 
 
