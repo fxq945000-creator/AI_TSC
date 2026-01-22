@@ -324,25 +324,25 @@ class ScriptAnalyzerGUI:
         self.root.geometry("1000x700")
         self.root.resizable(True, True)
         
+        # 配置深色主题
+        self.configure_dark_mode()
+        
         # 加载环境变量
         load_dotenv()
         
         # API配置
         self.api_key = tk.StringVar(value=os.getenv("API_KEY", ""))
-        self.api_url = tk.StringVar(value=os.getenv("API_URL", "https://api.openai.com/v1/chat/completions"))
+        self.api_url = tk.StringVar(value=os.getenv("API_URL", "https://ai.t8star.cn"))
         self.model = tk.StringVar(value=os.getenv("MODEL", "gpt-3.5-turbo"))
         
-        # 提示词配置
+        # 提示词配置 (移除 {script} 占位符)
         self.prompt = tk.StringVar(value=os.getenv("PROMPT", """
-请根据以下剧本内容，生成详细的电影分镜脚本。
+请根据剧本内容，生成详细的电影分镜脚本。
 
 要求：
 1. 分镜需包含场景、镜头号、镜头角度、画面内容、台词、时长等关键信息
 2. 分镜设计要考虑镜头语言和叙事节奏
 3. 格式清晰，易于阅读和理解
-
-剧本内容：
-{script}
 """))
         
         # 移除菜单栏，改为使用工具架
@@ -393,46 +393,72 @@ class ScriptAnalyzerGUI:
         self.exit_button = ttk.Button(self.help_button_frame, text="退出", command=self.root.quit)
         self.exit_button.pack(side=tk.LEFT, padx=10, pady=5)
         
-        # 创建内容框架（三栏布局）
-        self.content_frame = ttk.Frame(self.main_frame)
-        self.content_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        # 创建全局滚动区域
+        self.canvas_frame_container = ttk.Frame(self.main_frame)
+        self.canvas_frame_container.pack(fill=tk.BOTH, expand=True, pady=5)
         
-        # 设置网格布局
-        self.content_frame.columnconfigure(0, weight=1)
-        self.content_frame.columnconfigure(1, weight=1)
-        self.content_frame.columnconfigure(2, weight=1)
-        self.content_frame.rowconfigure(0, weight=1)
+        self.canvas = tk.Canvas(self.canvas_frame_container, background='#2b2b2b', highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(self.canvas_frame_container, orient="vertical", command=self.canvas.yview)
+        self.scrollable_frame = ttk.Frame(self.canvas)
         
-        # 左侧：脚本输入
-        self.script_frame = ttk.LabelFrame(self.content_frame, text="脚本内容", padding="10")
-        self.script_frame.grid(row=0, column=0, sticky=tk.NSEW, padx=5)
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+        
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        
+        def on_canvas_configure(event):
+            self.canvas.itemconfig(self.canvas_window, width=event.width)
+        self.canvas.bind("<Configure>", on_canvas_configure)
+        
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        
+        # 绑定全局鼠标滚轮
+        self.bind_mouse_wheel(self.root)
+        
+        # 创建主垂直分割窗口（调节上下高度）
+        self.main_paned = ttk.PanedWindow(self.scrollable_frame, orient=tk.VERTICAL)
+        self.main_paned.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # 创建顶部水平分割窗口（调节左右宽度）
+        self.top_paned = ttk.PanedWindow(self.main_paned, orient=tk.HORIZONTAL)
+        self.main_paned.add(self.top_paned, weight=1)
+        
+        # 左侧：剧本输入
+        self.script_frame = ttk.LabelFrame(self.top_paned, text="剧本内容", padding="10")
+        self.top_paned.add(self.script_frame, weight=1)
         
         # 脚本区域按钮
         self.script_button_frame = ttk.Frame(self.script_frame)
         self.script_button_frame.pack(fill=tk.X, pady=5)
         
-        # 上传脚本按钮
-        self.upload_button = ttk.Button(self.script_button_frame, text="上传脚本", command=self.upload_file)
+        # 上传剧本按钮
+        self.upload_button = ttk.Button(self.script_button_frame, text="上传剧本", command=self.upload_file)
         self.upload_button.pack(side=tk.LEFT, padx=2)
         
-        # 分析脚本按钮
-        self.analyze_button = ttk.Button(self.script_button_frame, text="分析脚本", command=self.start_analysis)
+        # 分析剧本按钮
+        self.analyze_button = ttk.Button(self.script_button_frame, text="分析剧本", command=self.start_analysis)
         self.analyze_button.pack(side=tk.LEFT, padx=2)
         
-        # 清空内容按钮
-        self.clear_button = ttk.Button(self.script_button_frame, text="清空脚本", command=self.clear_content)
+        # 清空剧本按钮
+        self.clear_button = ttk.Button(self.script_button_frame, text="清空剧本", command=self.clear_content)
         self.clear_button.pack(side=tk.LEFT, padx=2)
         
-        # 脚本文本框
+        # 剧本文本框
         self.script_scrollbar = ttk.Scrollbar(self.script_frame)
-        self.script_text = tk.Text(self.script_frame, wrap=tk.WORD, yscrollcommand=self.script_scrollbar.set)
+        self.script_text = tk.Text(self.script_frame, wrap=tk.WORD, yscrollcommand=self.script_scrollbar.set, height=15,
+                                  bg='#1e1e1e', fg='#ffffff', insertbackground='white')
         self.script_scrollbar.config(command=self.script_text.yview)
         self.script_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.script_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # 中间：分析结果
-        self.result_frame = ttk.LabelFrame(self.content_frame, text="分析结果", padding="10")
-        self.result_frame.grid(row=0, column=1, sticky=tk.NSEW, padx=5)
+        self.result_frame = ttk.LabelFrame(self.top_paned, text="分析结果", padding="10")
+        self.top_paned.add(self.result_frame, weight=1)
         
         # 分析结果区域按钮
         self.result_button_frame = ttk.Frame(self.result_frame)
@@ -444,14 +470,15 @@ class ScriptAnalyzerGUI:
         
         # 结果文本框
         self.result_scrollbar = ttk.Scrollbar(self.result_frame)
-        self.result_text = tk.Text(self.result_frame, wrap=tk.WORD, yscrollcommand=self.result_scrollbar.set, state=tk.DISABLED)
+        self.result_text = tk.Text(self.result_frame, wrap=tk.WORD, yscrollcommand=self.result_scrollbar.set, state=tk.DISABLED, height=15,
+                                  bg='#1e1e1e', fg='#ffffff', insertbackground='white')
         self.result_scrollbar.config(command=self.result_text.yview)
         self.result_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.result_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # 右侧：结果分析拆分
-        self.split_frame = ttk.LabelFrame(self.content_frame, text="结果分析拆分", padding="10")
-        self.split_frame.grid(row=0, column=2, sticky=tk.NSEW, padx=5)
+        # 底部：结果分析拆分
+        self.split_frame = ttk.LabelFrame(self.main_paned, text="结果分析拆分", padding="10")
+        self.main_paned.add(self.split_frame, weight=1)
         
         # 创建分解词配置区域（简化版）
         self.separator_config_frame = ttk.Frame(self.split_frame)
@@ -465,44 +492,38 @@ class ScriptAnalyzerGUI:
         self.split_options_button = ttk.Button(self.separator_config_frame, text="分解词配置", command=self.show_split_options)
         self.split_options_button.pack(fill=tk.X, padx=5, pady=2)
         
-        # 创建垂直排列的8个结果输出框
+        # 创建网格排列的8个结果输出框
         self.result_output_frame = ttk.Frame(self.split_frame)
         self.result_output_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
-        # 创建滚动区域
-        self.output_scrollbar = ttk.Scrollbar(self.result_output_frame, orient=tk.VERTICAL)
-        self.output_canvas = tk.Canvas(self.result_output_frame, yscrollcommand=self.output_scrollbar.set)
-        self.output_scrollbar.config(command=self.output_canvas.yview)
+        # 配置列权重，使两列等宽
+        self.result_output_frame.columnconfigure(0, weight=1)
+        self.result_output_frame.columnconfigure(1, weight=1)
         
-        # 滚动区域内容框架
-        self.output_content = ttk.Frame(self.output_canvas)
-        self.output_content_id = self.output_canvas.create_window((0, 0), window=self.output_content, anchor="nw")
-        
-        # 配置滚动
-        def on_output_configure(event):
-            self.output_canvas.configure(scrollregion=self.output_canvas.bbox("all"))
-            if self.output_content.winfo_reqwidth() != self.output_canvas.winfo_width():
-                self.output_canvas.itemconfigure(self.output_content_id, width=self.output_canvas.winfo_width())
-        
-        self.output_content.bind("<Configure>", on_output_configure)
-        self.output_canvas.bind("<Configure>", on_output_configure)
-        
-        # 布局
-        self.output_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # 创建垂直排列的8个结果输出框
         self.result_outputs = []
         self.result_texts = []
         
         for i in range(8):
+            # 计算行和列 (2列布局)
+            row = i // 2
+            col = i % 2
+            
             # 创建输出框框架
-            output_frame = ttk.LabelFrame(self.output_content, text=f"结果 {i+1}", padding="5")
-            output_frame.pack(fill=tk.X, expand=True, pady=3, padx=3)
+            output_frame = ttk.LabelFrame(self.result_output_frame, text=f"结果 {i+1}", padding="5")
+            output_frame.grid(row=row, column=col, sticky=tk.NSEW, padx=3, pady=3)
+            
+            # 工具栏（保存按钮）
+            toolbar_frame = ttk.Frame(output_frame)
+            toolbar_frame.pack(fill=tk.X, pady=(0, 2))
+            
+            # 这里的 i 是循环变量，在lambda中需要捕获
+            save_btn = ttk.Button(toolbar_frame, text="保存", width=6, command=lambda idx=i: self.save_single_split_result(idx))
+            save_btn.pack(side=tk.RIGHT)
             
             # 创建文本框
             scrollbar = ttk.Scrollbar(output_frame)
-            text_widget = tk.Text(output_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set, height=5)
+            text_widget = tk.Text(output_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set, height=8,
+                                 bg='#1e1e1e', fg='#ffffff', insertbackground='white')
             scrollbar.config(command=text_widget.yview)
             text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -513,30 +534,59 @@ class ScriptAnalyzerGUI:
             self.result_outputs.append(output_frame)
             self.result_texts.append(text_widget)
         
-        # 创建分解词配置对话框
-        self.create_split_options_dialog()
+        # 添加底部Padding，防止内容被遮挡
+        ttk.Frame(self.split_frame, height=20).pack(fill=tk.X)
         
-        # 初始化分解词变量
-        self.prefix_var = tk.StringVar(value="段落")
-        self.suffix_var = tk.StringVar(value="")
-        self.add_number_var = tk.BooleanVar(value=True)
+    def configure_dark_mode(self):
+        """配置深色主题"""
+        style = ttk.Style()
+        style.theme_use('clam')  # 使用clam主题作为基础，更容易自定义颜色
         
-        # 创建8个分解词输入框变量
-        self.separators = []
-        for i in range(8):
-            separator_var = tk.StringVar(value=f"{['亮点', '不足', '结构', '内容', '节奏', '画面', '台词', '建议'][i]}")
-            self.separators.append(separator_var)
+        # 定义颜色
+        bg_color = '#2b2b2b'
+        fg_color = '#ffffff'
+        select_bg = '#404040'
+        active_bg = '#3c3f41'
         
-        # 添加右键菜单
-        self.create_context_menus()
+        # 配置根窗口背景
+        self.root.configure(bg=bg_color)
         
-        # 添加快捷键支持
-        self.create_shortcuts()
+        # 配置通用样式
+        style.configure('.', 
+                        background=bg_color, 
+                        foreground=fg_color,
+                        fieldbackground='#1e1e1e',
+                        darkcolor=bg_color,
+                        lightcolor=bg_color,
+                        troughcolor=bg_color,
+                        selectbackground=select_bg,
+                        selectforeground=fg_color)
         
-        # 状态标签
-        self.status_var = tk.StringVar(value="就绪")
-        self.status_label = ttk.Label(self.main_frame, textvariable=self.status_var, foreground="blue")
-        self.status_label.pack(pady=5)
+        # 配置特定控件样式
+        style.configure('TFrame', background=bg_color)
+        style.configure('TLabel', background=bg_color, foreground=fg_color)
+        style.configure('TButton', background='#3c3f41', foreground=fg_color, borderwidth=1)
+        style.map('TButton',
+                 background=[('active', '#505050'), ('pressed', '#606060')],
+                 foreground=[('active', '#ffffff')])
+        
+        style.configure('TEntry', fieldbackground='#1e1e1e', foreground=fg_color, insertcolor='white')
+        style.configure('TCombobox', fieldbackground='#1e1e1e', foreground=fg_color, arrowcolor='white')
+        
+        # 配置LabelFrame
+        style.configure('TLabelframe', background=bg_color, foreground=fg_color, bordercolor='#505050')
+        style.configure('TLabelframe.Label', background=bg_color, foreground=fg_color)
+        
+        # 配置Notebook
+        style.configure('TNotebook', background=bg_color, tabposition='n')
+        style.configure('TNotebook.Tab', background='#3c3f41', foreground=fg_color, padding=[10, 2])
+        style.map('TNotebook.Tab',
+                 background=[('selected', '#505050')],
+                 foreground=[('selected', '#ffffff')])
+        
+        # 配置PanedWindow
+        style.configure('TPanedwindow', background=bg_color)
+        style.configure('Sash', sashthickness=5, background='#505050', handlecolor='white')
         
     def upload_file(self):
         """上传脚本文件"""
@@ -572,8 +622,15 @@ class ScriptAnalyzerGUI:
                 if content is None:
                     raise UnicodeDecodeError("无法解析文件编码", b"", 0, 0, "所有尝试的编码都失败")
                 
+                # 确保文本框可编辑
+                self.script_text.config(state=tk.NORMAL)
                 self.script_text.delete(1.0, tk.END)
                 self.script_text.insert(1.0, content)
+                # 滚动到顶部
+                self.script_text.see(1.0)
+                # 强制更新UI
+                self.script_text.update_idletasks()
+                
                 self.status_var.set(f"已加载文件: {os.path.basename(file_path)} (编码: {used_encoding})")
         except Exception as e:
             CustomErrorDialog(self.parent, "错误", f"无法打开文件: {str(e)}")
@@ -613,26 +670,24 @@ class ScriptAnalyzerGUI:
             print(f"原始提示词完整内容: {repr(prompt)}")  # 使用repr显示所有特殊字符
             print(f"提示词中是否包含{{script}}占位符: {'{script}' in prompt}")
             print(f"脚本内容长度: {len(script)} 字符")
-            print(f"脚本内容: {repr(script)}")
-            
-            # 验证占位符
-            if '{script}' not in prompt:
-                print("警告: 提示词中未找到{{script}}占位符")
-                # 检查是否有其他可能的占位符
-                if '$P$G' in prompt:
-                    print("发现$P$G占位符，可能是错误的占位符格式")
-                    # 自动修复占位符
-                    prompt = prompt.replace('$P$G', '{script}')
-                    print("已自动修复占位符为{{script}}")
             
             # 构建完整提示词
-            full_prompt = prompt.replace("{script}", script)
+            # 如果提示词中包含 {script} 占位符，则替换
+            # 如果不包含，则将剧本内容附加到提示词后面
+            if '{script}' in prompt:
+                full_prompt = prompt.replace("{script}", script)
+                print("已替换{script}占位符")
+            else:
+                full_prompt = f"{prompt}\n\n剧本内容：\n{script}"
+                print("未找到占位符，已将剧本内容附加到末尾")
+                
             print(f"替换后完整提示词长度: {len(full_prompt)} 字符")
             print(f"完整提示词预览: {full_prompt[:100]}...")
             
             current_model = self.model.get()
             api_url = self.api_url.get()
             api_key = self.api_key.get()
+
             
             print(f"当前模型: {current_model}")
             print(f"API URL: {api_url}")
@@ -960,23 +1015,68 @@ class ScriptAnalyzerGUI:
         # 创建提示词配置对话框
         dialog = tk.Toplevel(self.root)
         dialog.title("提示词配置")
-        dialog.geometry("500x300")
+        dialog.geometry("600x450")
         dialog.transient(self.root)
         dialog.grab_set()
+        
+        # 应用深色主题到新对话框（如果是Toplevel，通常不需要额外设置，但为了保险）
+        dialog.configure(bg='#2b2b2b')
         
         # 创建主框架
         main_frame = ttk.Frame(dialog, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
+        # 模板管理区域
+        template_frame = ttk.LabelFrame(main_frame, text="提示词模板", padding="5")
+        template_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 模板选择下拉框
+        ttk.Label(template_frame, text="选择模板:").pack(side=tk.LEFT, padx=5)
+        
+        template_var = tk.StringVar()
+        template_combo = ttk.Combobox(template_frame, textvariable=template_var)
+        template_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        
+        # 加载模板列表
+        templates = self.load_prompt_templates()
+        template_names = list(templates.keys())
+        template_combo['values'] = template_names
+        
+        def load_selected_template(event=None):
+            name = template_var.get()
+            if name in templates:
+                prompt_text.delete(1.0, tk.END)
+                prompt_text.insert(1.0, templates[name])
+        
+        template_combo.bind("<<ComboboxSelected>>", load_selected_template)
+        
+        # 删除模板按钮
+        def delete_template():
+            name = template_var.get()
+            if not name:
+                return
+            if name in templates:
+                if messagebox.askyesno("确认", f"确定要删除模板 '{name}' 吗？"):
+                    del templates[name]
+                    self.save_prompt_templates(templates)
+                    # 刷新列表
+                    current_names = list(templates.keys())
+                    template_combo['values'] = current_names
+                    template_var.set("")
+        
+        delete_btn = ttk.Button(template_frame, text="删除", command=delete_template)
+        delete_btn.pack(side=tk.RIGHT, padx=5)
+        
         # 提示词说明
-        ttk.Label(main_frame, text="分析提示词: ").pack(anchor=tk.W, pady=(0, 5))
+        ttk.Label(main_frame, text="分析提示词 (系统会自动在末尾附加剧本内容): ").pack(anchor=tk.W, pady=(0, 5))
         
         # 提示词文本框
         text_frame = ttk.Frame(main_frame)
         text_frame.pack(fill=tk.BOTH, expand=True)
         
         scrollbar = ttk.Scrollbar(text_frame)
-        prompt_text = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set, height=10)
+        prompt_text = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set, height=10,
+                             bg='#1e1e1e', fg='#ffffff', insertbackground='white')
         scrollbar.config(command=prompt_text.yview)
         prompt_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -984,24 +1084,71 @@ class ScriptAnalyzerGUI:
         # 插入当前提示词
         prompt_text.insert(1.0, self.prompt.get())
         
-        # 按钮框架
+        # 底部按钮区域
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill=tk.X, pady=10)
         
-        # 保存按钮
-        def save_prompt():
+        # 保存为新模板区域
+        save_template_frame = ttk.Frame(button_frame)
+        save_template_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Label(save_template_frame, text="另存为模板:").pack(side=tk.LEFT, padx=5)
+        new_template_name = tk.StringVar()
+        ttk.Entry(save_template_frame, textvariable=new_template_name, width=15).pack(side=tk.LEFT, padx=5)
+        
+        def save_as_template():
+            name = new_template_name.get().strip()
+            content = prompt_text.get(1.0, tk.END).strip()
+            if not name:
+                messagebox.showwarning("警告", "请输入模板名称")
+                return
+            if not content:
+                messagebox.showwarning("警告", "提示词内容不能为空")
+                return
+            
+            templates[name] = content
+            self.save_prompt_templates(templates)
+            
+            # 刷新列表
+            current_names = list(templates.keys())
+            template_combo['values'] = current_names
+            template_var.set(name)
+            messagebox.showinfo("成功", f"模板 '{name}' 已保存")
+            
+        ttk.Button(save_template_frame, text="保存模板", command=save_as_template).pack(side=tk.LEFT, padx=5)
+        
+        # 底部右侧按钮
+        right_btn_frame = ttk.Frame(button_frame)
+        right_btn_frame.pack(side=tk.RIGHT)
+        
+        # 应用并关闭按钮
+        def apply_prompt():
             new_prompt = prompt_text.get(1.0, tk.END).strip()
             if new_prompt:
                 self.prompt.set(new_prompt)
                 dialog.destroy()
         
-        save_button = ttk.Button(button_frame, text="保存", command=save_prompt)
-        save_button.pack(side=tk.RIGHT, padx=5)
-        
-        # 取消按钮
-        cancel_button = ttk.Button(button_frame, text="取消", command=dialog.destroy)
-        cancel_button.pack(side=tk.RIGHT, padx=5)
-    
+        ttk.Button(right_btn_frame, text="应用", command=apply_prompt).pack(side=tk.LEFT, padx=5)
+        ttk.Button(right_btn_frame, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+    def load_prompt_templates(self):
+        """加载提示词模板"""
+        try:
+            if os.path.exists("prompt_templates.json"):
+                with open("prompt_templates.json", "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"加载模板失败: {e}")
+        return {}
+
+    def save_prompt_templates(self, templates):
+        """保存提示词模板"""
+        try:
+            with open("prompt_templates.json", "w", encoding="utf-8") as f:
+                json.dump(templates, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            messagebox.showerror("错误", f"保存模板失败: {str(e)}")
+            
     def show_split_options(self):
         """显示分解词配置对话框"""
         # 显示分解词配置对话框
@@ -1104,6 +1251,96 @@ class ScriptAnalyzerGUI:
             text_widget.config(state=tk.DISABLED)
             
         self.status_var.set("已清空")
+    
+    def bind_mouse_wheel(self, widget):
+        """绑定鼠标滚轮事件"""
+        # 使用 bind_all 确保在整个应用中都能捕获（除了被特定控件拦截的）
+        # Windows
+        widget.bind_all("<MouseWheel>", self._on_mouse_wheel)
+        # Linux
+        widget.bind_all("<Button-4>", self._on_mouse_wheel)
+        widget.bind_all("<Button-5>", self._on_mouse_wheel)
+    
+    def _on_mouse_wheel(self, event):
+        """处理鼠标滚轮事件"""
+        # 获取当前鼠标下的控件
+        widget = event.widget
+        
+        # 1. 如果控件不在主窗口中（例如在对话框中），不处理
+        try:
+            if widget.winfo_toplevel() != self.root:
+                return
+        except Exception:
+            pass
+            
+        # 2. 智能滚动处理
+        scroll_canvas = True
+        
+        try:
+            if isinstance(widget, tk.Text) or "Text" in str(widget.winfo_class()):
+                # 检查文本框是否需要滚动
+                # yview() 返回 (top, bottom)，范围 0.0-1.0
+                # 如果 (0.0, 1.0) 说明全部内容可见，不需要滚动文本框
+                top, bottom = widget.yview()
+                
+                if top == 0.0 and bottom == 1.0:
+                    # 内容完全可见，直接滚动页面
+                    scroll_canvas = True
+                else:
+                    # 检查滚动方向
+                    # Windows: delta > 0 是向上滚，delta < 0 是向下滚
+                    # Linux: num 4 是向上滚，num 5 是向下滚
+                    is_scrolling_up = (event.delta > 0) if hasattr(event, "delta") else (event.num == 4)
+                    is_scrolling_down = (event.delta < 0) if hasattr(event, "delta") else (event.num == 5)
+                    
+                    if is_scrolling_up and top == 0.0:
+                        # 已经在顶部且向上滚 -> 滚动页面
+                        scroll_canvas = True
+                    elif is_scrolling_down and bottom == 1.0:
+                        # 已经在底部且向下滚 -> 滚动页面
+                        scroll_canvas = True
+                    else:
+                        # 其他情况滚动文本框（让事件继续传播）
+                        scroll_canvas = False
+        except Exception:
+            pass
+            
+        # 3. 执行主画布滚动
+        if scroll_canvas:
+            if event.num == 5 or (hasattr(event, "delta") and event.delta < 0):
+                self.canvas.yview_scroll(1, "units")
+            elif event.num == 4 or (hasattr(event, "delta") and event.delta > 0):
+                self.canvas.yview_scroll(-1, "units")
+
+    def save_single_split_result(self, index):
+        """保存单个拆分结果"""
+        try:
+            content = self.result_texts[index].get(1.0, tk.END).strip()
+            if not content:
+                messagebox.showwarning("警告", "没有可保存的内容")
+                return
+            
+            # 获取默认文件名（使用标题）
+            default_name = self.separators[index].get()
+            # 清理文件名中的非法字符
+            default_name = "".join([c for c in default_name if c.isalnum() or c in (' ', '-', '_')]).strip()
+            if not default_name:
+                default_name = f"result_{index+1}"
+            
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                initialfile=f"{default_name}.txt",
+                filetypes=[("文本文件", "*.txt"), ("所有文件", "*.*")],
+                title=f"保存 - {default_name}"
+            )
+            
+            if file_path:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                self.status_var.set(f"已保存: {os.path.basename(file_path)}")
+        except Exception as e:
+            # 使用 self.root 作为父窗口
+            CustomErrorDialog(self.root, "错误", f"保存失败: {str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()
